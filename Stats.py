@@ -172,6 +172,69 @@ class Data:
         df_stats = df_stats.set_index("Cutpoints", drop=True)
         df_stats = df_stats.drop("BF10", axis=1)
 
+        if show_plot:
+
+            n_subjs = len(set(self.df_volume["ID"]))
+            t_crit = scipy.stats.t.ppf(.95, n_subjs - 1)
+            ci_factor = t_crit / np.sqrt(n_subjs)
+
+            fig = plt.subplots(2, 2, figsize=(10, 7))
+            plt.subplots_adjust(hspace=.33)
+
+            for ind, intensity in enumerate(["Sedentary", "Light", "Moderate", "Vigorous"]):
+                plt.subplot(2, 2, ind + 1)
+                plt.title(intensity)
+
+                plt.bar(x=["PowellND15", "PowellND60", "PowellD15", "PowellD60",
+                           "EsligerL15", "EsligerL60", "EsligerR15", "EsligerR60"],
+                        height=[self.df_volume.loc[(self.df_volume["Intensity"] == intensity) &
+                                                   (self.df_volume["EpochLen"] == 15)].describe()["Powell_ND"]["mean"],
+                                self.df_volume.loc[(self.df_volume["Intensity"] == intensity) &
+                                                   (self.df_volume["EpochLen"] == 60)].describe()["Powell_ND"]["mean"],
+                                self.df_volume.loc[(self.df_volume["Intensity"] == intensity) &
+                                                   (self.df_volume["EpochLen"] == 15)].describe()["Powell_D"]["mean"],
+                                self.df_volume.loc[(self.df_volume["Intensity"] == intensity) &
+                                                   (self.df_volume["EpochLen"] == 60)].describe()["Powell_D"]["mean"],
+                                self.df_volume.loc[(self.df_volume["Intensity"] == intensity) &
+                                                   (self.df_volume["EpochLen"] == 15)].describe()["Esliger_L"]["mean"],
+                                self.df_volume.loc[(self.df_volume["Intensity"] == intensity) &
+                                                   (self.df_volume["EpochLen"] == 60)].describe()["Esliger_L"]["mean"],
+                                self.df_volume.loc[(self.df_volume["Intensity"] == intensity) &
+                                                   (self.df_volume["EpochLen"] == 15)].describe()["Esliger_R"]["mean"],
+                                self.df_volume.loc[(self.df_volume["Intensity"] == intensity) &
+                                                   (self.df_volume["EpochLen"] == 60)].describe()["Esliger_R"]["mean"]],
+                        yerr=[self.df_volume.loc[(self.df_volume["Intensity"] == intensity) &
+                                                 (self.df_volume["EpochLen"] == 15)].describe()["Powell_ND"][
+                                  "std"] * ci_factor,
+                              self.df_volume.loc[(self.df_volume["Intensity"] == intensity) &
+                                                 (self.df_volume["EpochLen"] == 60)].describe()["Powell_ND"][
+                                  "std"] * ci_factor,
+                              self.df_volume.loc[(self.df_volume["Intensity"] == intensity) &
+                                                 (self.df_volume["EpochLen"] == 15)].describe()["Powell_D"][
+                                  "std"] * ci_factor,
+                              self.df_volume.loc[(self.df_volume["Intensity"] == intensity) &
+                                                 (self.df_volume["EpochLen"] == 60)].describe()["Powell_D"][
+                                  "std"] * ci_factor,
+                              self.df_volume.loc[(self.df_volume["Intensity"] == intensity) &
+                                                 (self.df_volume["EpochLen"] == 15)].describe()["Esliger_L"][
+                                  "std"] * ci_factor,
+                              self.df_volume.loc[(self.df_volume["Intensity"] == intensity) &
+                                                 (self.df_volume["EpochLen"] == 60)].describe()["Esliger_L"][
+                                  "std"] * ci_factor,
+                              self.df_volume.loc[(self.df_volume["Intensity"] == intensity) &
+                                                 (self.df_volume["EpochLen"] == 15)].describe()["Esliger_R"][
+                                  "std"] * ci_factor,
+                              self.df_volume.loc[(self.df_volume["Intensity"] == intensity) &
+                                                 (self.df_volume["EpochLen"] == 60)].describe()["Esliger_R"][
+                                  "std"] * ci_factor],
+                        color=["red", "red", "firebrick", "firebrick",
+                               "steelblue", "steelblue", "dodgerblue", "dodgerblue"],
+                        edgecolor='black', alpha=.7, capsize=4)
+                plt.xticks(fontsize=6, rotation=45)
+
+                if ind == 0 or ind == 2:
+                    plt.ylabel("% of data")
+
         return df_stats
 
     def agreement_stats(self, data_type="Kappa", show_plot=False):
@@ -184,7 +247,7 @@ class Data:
         df_powell15 = self.df_agree.loc[(self.df_agree["EpochLen"] == 15) & (self.df_agree["Comparison"] == "Powell")]
         df_esliger60 = self.df_agree.loc[(self.df_agree["EpochLen"] == 60) & (self.df_agree["Comparison"] == "Esliger")]
 
-        within_author_t = pg.ttest(df_powell15["Kappa"], df_esliger60[data_type], paired=True)
+        within_author_t = pg.ttest(df_powell15[data_type], df_esliger60[data_type], paired=True)
         within_author_t["Comparison"] = "Powell15(N-ND)-Esliger60(R-L)"
         within_author_t = within_author_t.set_index("Comparison", drop=True)
 
@@ -199,6 +262,7 @@ class Data:
                     yerr=[df_powell15.describe()["Kappa"]["std"]*ci_factor,
                           df_esliger60.describe()["Kappa"]["std"]*ci_factor],
                     capsize=4, color=['red', 'dodgerblue'], edgecolor='black', alpha=.7)
+            plt.ylim(0, 1)
 
             plt.ylabel("Cohen's Kappa")
             plt.title("Cohen's Kappa")
@@ -216,13 +280,73 @@ class Data:
 
         return within_author_t
 
+    def between_cutpoint_stats(self, show_plot=True):
+
+        powell = self.df_volume.loc[self.df_volume["EpochLen"] == 15][["ID", "Intensity", "Powell_ND"]]
+        esliger = self.df_volume.loc[self.df_volume["EpochLen"] == 60][["ID", "Intensity", "Esliger_L"]]
+
+        df_list = []
+
+        for intensity in ["Sedentary", "Light", "Moderate", "Vigorous"]:
+
+            ttest = pg.ttest(x=powell.loc[powell["Intensity"] == intensity]["Powell_ND"],
+                             y=esliger.loc[esliger["Intensity"] == intensity]["Esliger_L"],
+                             paired=True)
+
+            ttest.insert(loc=0, column="Intensity", value=intensity)
+            ttest["Cutpoints"] = "PowellND15-EsligerL60"
+
+            df_list.append(ttest)
+
+        df_stats = pd.concat(df_list)
+        df_stats = df_stats.set_index("Cutpoints", drop=True)
+
+        if show_plot:
+
+            n_subjs = len(set(self.df_volume["ID"]))
+            t_crit = scipy.stats.t.ppf(.95, n_subjs - 1)
+            ci_factor = t_crit / np.sqrt(n_subjs)
+
+            fig = plt.subplots(2, 2, figsize=(10, 7))
+
+            for ind, intensity in enumerate(["Sedentary", "Light", "Moderate", "Vigorous"]):
+                plt.subplot(2, 2, ind + 1)
+                plt.title(intensity)
+
+                plt.bar(x=["PowellND_15", "EsligerL_60"],
+                        height=[self.df_volume.loc[(self.df_volume["EpochLen"] == 15) &
+                                                   (self.df_volume["Intensity"] == intensity)].describe()
+                                ["Powell_ND"]["mean"],
+                                self.df_volume.loc[(self.df_volume["EpochLen"] == 60) &
+                                                   (self.df_volume["Intensity"] == intensity)].describe()
+                                ["Esliger_L"]["mean"]],
+                        yerr=[self.df_volume.loc[(self.df_volume["EpochLen"] == 15) &
+                                                   (self.df_volume["Intensity"] == intensity)].describe()
+                                ["Powell_ND"]["std"] * ci_factor,
+                                self.df_volume.loc[(self.df_volume["EpochLen"] == 60) &
+                                                   (self.df_volume["Intensity"] == intensity)].describe()
+                                ["Esliger_L"]["std"] * ci_factor],
+                        color=["red", "steelblue"], edgecolor='black', alpha=.7, capsize=4)
+
+                if ind == 0 or ind == 2:
+                    plt.ylabel("% of data")
+
+        return df_stats
+
 
 # =====================================================================================================================
 x = Data(agree_file="/Users/kyleweber/Desktop/OND05 Activity Data/All_Agreement.xlsx",
          volume_file="/Users/kyleweber/Desktop/OND05 Activity Data/All_ActivityVolume.xlsx")
 
-# within_cutpoint_t = x.within_cutpoint_stats(True)
+# Compares cut-points from same author (activity volume)
+# within_cutpoints_t = x.within_cutpoint_stats(True)
 
+# Compares [level of agreement within an author] between authors
 # within_cutpoint_agree = x.agreement_stats("Kappa", True)
 
-# across_epochs_t = x.across_epoch_stats()
+# Compares cut-points with an author scaled to other epoch length (activity volume)
+# across_epochs_t = x.across_epoch_stats(True)
+
+# Compares activity volume as measured by PowellND and EsligerL (correct cutpoints + epoch lengths)
+# between_cutpoints_t = x.between_cutpoint_stats()
+
