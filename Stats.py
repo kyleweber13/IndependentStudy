@@ -20,7 +20,7 @@ class Data:
 
         return df_volume, df_agree
 
-    def valid_comparison(self, show_plot=True):
+    def valid_comparison(self, show_plot=True, test_type="parametric"):
         """Test of original parameters: PowellND15 vs. EsligerL60."""
 
         df_powell = self.df_volume.loc[self.df_volume["EpochLen"] == 15]
@@ -58,22 +58,27 @@ class Data:
         for test in df_list_wtest:
             output.append([i for i in test])
 
-        df_nonpara = pd.DataFrame(output, columns=["W", "p"], index=["Sedentary", "Light", "Moderate", "Vigorous"])
+        df_nonpara = pd.DataFrame(output, columns=["W", "p-val"], index=["Sedentary", "Light", "Moderate", "Vigorous"])
         df_nonpara["Intensity"] = ["Sedentary", "Light", "Moderate", "Vigorous"]
         df_nonpara = df_nonpara.set_index("Intensity", drop=True)
-        df_nonpara["p < .05"] = ["*" if p < .05 else " " for p in df_nonpara["p"]]
+        df_nonpara["p < .05"] = ["*" if p < .05 else " " for p in df_nonpara["p-val"]]
 
-        df_shapiro = pd.DataFrame(list(df_list_shapiro), columns=["W", "p"])
+        df_shapiro = pd.DataFrame(list(df_list_shapiro), columns=["W", "p-val"])
         df_shapiro["Intensity"] = ["Sedentary", "Sedentary", "Light", "Light",
                                    "Moderate", "Moderate", "Vigorous", "Vigorous"]
         df_shapiro["Data"] = ["Powell_ND", "Esliger_L", "Powell_ND", "Esliger_L",
                               "Powell_ND", "Esliger_L", "Powell_ND", "Esliger_L"]
-        df_shapiro["p < .05"] = ["*" if p < .05 else " " for p in df_shapiro["p"]]
+        df_shapiro["p < .05"] = ["*" if p < .05 else " " for p in df_shapiro["p-val"]]
         df_shapiro = df_shapiro.set_index("Data", drop=True)
 
         # Plotting ----------------------------------------------------------------------------------------------------
 
-        if show_plot:
+        def plot_data(test_data="parametric"):
+
+            if test_data == "parametric":
+                sig_df = df_stats
+            if test_data == "nonparametric" or test_type == "non-parametric":
+                sig_df = df_nonpara
 
             n_subjs = len(set(self.df_volume["ID"]))
             t_crit = scipy.stats.t.ppf(.95, n_subjs - 1)
@@ -81,7 +86,7 @@ class Data:
 
             plt.subplots(2, 2, figsize=(10, 7))
             plt.subplots_adjust(hspace=.28)
-            plt.suptitle("Comparison of Original Cut-Point Details")
+            plt.suptitle("Comparison of Original Cut-Point Parameters ({})".format(test_data))
 
             for i, intensity in enumerate(["Sedentary", "Light", "Moderate", "Vigorous"]):
                 plt.subplot(2, 2, 1 + i)
@@ -97,7 +102,7 @@ class Data:
                         color=["red", "dodgerblue"], alpha=.7, edgecolor='black', capsize=4, width=.6)
 
                 # Significance bars ------------------------------------------------------
-                if df_stats.loc[intensity]["p-val"] < .05:
+                if sig_df.loc[intensity]["p-val"] < .05:
                     powell_h = df_powell.loc[df_powell["Intensity"] == intensity]["Powell_ND"].describe()["mean"] +\
                                df_powell.loc[df_powell["Intensity"] == intensity]["Powell_ND"].describe()['std'] \
                                * ci_factor
@@ -116,12 +121,12 @@ class Data:
                               max([powell_h, esliger_h])*1.15, max([powell_h, esliger_h])*1.1], color='black')
 
                     # Label formatting
-                    if round(df_stats.loc[intensity]["p-val"], 4) > 0:
+                    if round(sig_df.loc[intensity]["p-val"], 3) > .001:
                         plt.text(x=.5, y=max([powell_h, esliger_h]) * 1.2,
-                                 s="p = {}".format(round(df_stats.loc[intensity]["p-val"]), 4),
+                                 s="p = {}".format(round(sig_df.loc[intensity]["p-val"], 3)),
                                  horizontalalignment="center")
 
-                    if round(df_stats.loc[intensity]["p-val"], 4) == 0:
+                    if round(sig_df.loc[intensity]["p-val"], 3) <= .001:
                         plt.text(x=.5, y=max([powell_h, esliger_h]) * 1.2,
                                  s="p < .001",
                                  horizontalalignment="center")
@@ -138,9 +143,12 @@ class Data:
                 if i == 0 or i == 2:
                     plt.ylabel("% of valid data")
 
+        if show_plot:
+            plot_data(test_data=test_type)
+
         return df_stats, df_nonpara, df_shapiro
 
-    def epoch_scaling_comparison(self, show_plot=False, wear_side="nondom"):
+    def epoch_scaling_comparison(self, show_plot=False, wear_side="nondom", test_type="parametric"):
         """Tests whether scaling cutpoints to different epoch lengths affects measured activity volume.
            Runs separate paired T-tests on PowellND (15 vs. 60 seconds), PowellD (15 vs. 60 seconds),
            EsligerL (15 vs. 60 seconds), EsligerR (15 vs. 60 seconds) for each activity intensity
@@ -158,8 +166,11 @@ class Data:
         # ----------------------------------------------- PAIRED T-TESTS ----------------------------------------------
         # Loops through and runs t-test for each intensity
         df_list = []
+        df_list_shapiro = []
+        df_list_wtest = []
 
         for cutpoints in column_list:
+
             for intensity_cat in ["Sedentary", "Light", "Moderate", "Vigorous"]:
                 ttest = pg.ttest(x=self.df_volume.loc[(self.df_volume["EpochLen"] == 15) &
                                                       (self.df_volume["Intensity"] == intensity_cat)][cutpoints],
@@ -167,20 +178,71 @@ class Data:
                                                       (self.df_volume["Intensity"] == intensity_cat)][cutpoints],
                                  paired=True)
 
+                wtest = scipy.stats.wilcoxon(x=self.df_volume.loc[(self.df_volume["EpochLen"] == 15) &
+                                                                  (self.df_volume["Intensity"] == intensity_cat)][cutpoints],
+                                             y=self.df_volume.loc[(self.df_volume["EpochLen"] == 60) &
+                                                                  (self.df_volume["Intensity"] == intensity_cat)][cutpoints])
+
                 ttest.insert(loc=0, column="Intensity", value=intensity_cat)
                 ttest["Cutpoints"] = cutpoints + "15-60"
 
                 df_list.append(ttest)
 
+                shapiro = scipy.stats.shapiro(self.df_volume.loc[(self.df_volume["EpochLen"] == 15) &
+                                                                 (self.df_volume["Intensity"] == intensity_cat)]
+                                              [cutpoints])
+                shapiro2 = scipy.stats.shapiro(self.df_volume.loc[(self.df_volume["EpochLen"] == 60) &
+                                                                  (self.df_volume["Intensity"] == intensity_cat)]
+                                               [cutpoints])
+
+                df_list_shapiro.append(shapiro)
+                df_list_shapiro.append(shapiro2)
+
+                df_list_wtest.append(wtest)
+
         # df formatting. Sets intensity to index, drops BF10 column
         df_stats = pd.concat(df_list)
         df_stats = df_stats.set_index("Cutpoints", drop=True)
         df_stats = df_stats.drop("BF10", axis=1)
+        df_stats["p < .05"] = ["*" if i < .05 else " " for i in df_stats["p-val"]]
 
-        df_stats["p < .05"] = ["Significant" if i < .05 else "Not significant" for i in df_stats["p-val"]]
+        output = []
+        for test in df_list_wtest:
+            output.append([i for i in test])
+
+        df_nonpara = pd.DataFrame(output, columns=["W", "p-val"])
+        df_nonpara["Intensity"] = ["Sedentary", "Light", "Moderate", "Vigorous",
+                                   "Sedentary", "Light", "Moderate", "Vigorous"]
+        df_nonpara["Data"] = [column_list[0] + "15-60", column_list[0] + "15-60",
+                              column_list[0] + "15-60", column_list[0] + "15-60",
+                              column_list[1] + "15-60", column_list[1] + "15-60",
+                              column_list[1] + "15-60", column_list[1] + "15-60"]
+        df_nonpara = df_nonpara.set_index("Data", drop=True)
+        df_nonpara["p < .05"] = ["*" if p < .05 else " " for p in df_nonpara["p-val"]]
+
+        df_shapiro = pd.DataFrame(list(df_list_shapiro), columns=["W", "p-val"])
+        df_shapiro["Intensity"] = ["Sedentary", "Sedentary", "Light", "Light",
+                                   "Moderate", "Moderate", "Vigorous", "Vigorous",
+                                   "Sedentary", "Sedentary", "Light", "Light",
+                                   "Moderate", "Moderate", "Vigorous", "Vigorous"]
+        df_shapiro["Data"] = [column_list[0] + "15-60", column_list[0] + "60",
+                              column_list[0] + "15", column_list[0] + "60",
+                              column_list[0] + "15", column_list[0] + "60",
+                              column_list[0] + "15", column_list[0] + "60",
+                              column_list[1] + "15", column_list[1] + "60",
+                              column_list[1] + "15", column_list[1] + "60",
+                              column_list[1] + "15", column_list[1] + "60",
+                              column_list[1] + "15", column_list[1] + "60"]
+        df_shapiro["p < .05"] = ["*" if p < .05 else " " for p in df_shapiro["p-val"]]
+        df_shapiro = df_shapiro.set_index("Data", drop=True)
 
         # Plotting ----------------------------------------------------------------------------------------------------
-        if show_plot:
+        def plot_data(test_data):
+
+            if test_data == "parametric":
+                sig_df = df_stats
+            if test_data == "nonparametric" or test_data == "non-parametric":
+                sig_df = df_nonpara
 
             n_subjs = len(set(self.df_volume["ID"]))
             t_crit = scipy.stats.t.ppf(.95, n_subjs - 1)
@@ -189,7 +251,7 @@ class Data:
             fig = plt.subplots(2, 2, figsize=(10, 7))
             plt.subplots_adjust(hspace=.33)
 
-            plt.suptitle("Epoch Length Scaling within Author: {} data".format(plot_title))
+            plt.suptitle("Epoch Length Scaling within Author: {} data ({})".format(plot_title, test_data))
 
             for ind, intensity in enumerate(["Sedentary", "Light", "Moderate", "Vigorous"]):
                 plt.subplot(2, 2, ind + 1)
@@ -229,7 +291,7 @@ class Data:
                     plt.ylabel("% of data")
 
                 # Significance bars ------------------------------
-                stats_row = df_stats.loc[df_stats["Intensity"] == intensity]
+                stats_row = sig_df.loc[df_stats["Intensity"] == intensity]
 
                 bottom, top = plt.ylim()
 
@@ -272,7 +334,10 @@ class Data:
                 if sig_result:
                     plt.ylim(bottom, top*1.3)
 
-        return df_stats
+        if show_plot:
+            plot_data(test_data=test_type)
+
+        return df_stats, df_nonpara, df_shapiro
 
     def author_by_epoch(self, wear_side="nondom"):
 
@@ -579,13 +644,13 @@ x = Data(agree_file="/Users/kyleweber/Desktop/Data/OND05/OND05 Activity Data/All
          volume_file="/Users/kyleweber/Desktop/Data/OND05/OND05 Activity Data/All_ActivityVolume.xlsx")
 
 # Compares original parameters: Powell15ND vs. Esliger60L
-para, nonpara, shapiro = x.valid_comparison(show_plot=False)
+# para, nonpara, shapiro = x.valid_comparison(show_plot=True, test_type="nonparametric")
 
 # Compares cut-points with an author scaled to other epoch length (activity volume)
-# across_epochs_t = x.epoch_scaling_comparison(wear_side="NonDom", show_plot=True)
+# para, nonpara, shapiro = x.epoch_scaling_comparison(wear_side="NonDom", show_plot=True, test_type="nonparametric")
 
 # Compares cut-points from same author (activity volume)
-# within_cutpoints_t = x.within_cutpoint_stats(show_plot=True)
+within_cutpoints_t = x.within_cutpoint_stats(show_plot=True)
 
 # Compares [level of agreement within an author] between authors
 # within_cutpoint_agree = x.agreement_stats("Kappa", True)
