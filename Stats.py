@@ -29,17 +29,47 @@ class Data:
         df_esliger = df_esliger[["Intensity", "Esliger_L"]]
 
         df_list = []
+        df_list_wtest = []
+        df_list_shapiro = []
+
         for intensity in ["Sedentary", "Light", "Moderate", "Vigorous"]:
 
             ttest = pg.ttest(x=df_powell.loc[df_powell["Intensity"] == intensity]["Powell_ND"],
                              y=df_esliger.loc[df_esliger["Intensity"] == intensity]["Esliger_L"],
                              paired=True)
 
+            wtest = scipy.stats.wilcoxon(x=df_powell.loc[df_powell["Intensity"] == intensity]["Powell_ND"],
+                                         y=df_esliger.loc[df_esliger["Intensity"] == intensity]["Esliger_L"])
+
+            shapiro = scipy.stats.shapiro(df_powell.loc[df_powell["Intensity"] == intensity]["Powell_ND"])
+            shapiro2 = scipy.stats.shapiro(df_esliger.loc[df_esliger["Intensity"] == intensity]["Esliger_L"])
+
             df_list.append(ttest)
+            df_list_wtest.append(wtest)
+            df_list_shapiro.append(shapiro)
+            df_list_shapiro.append(shapiro2)
 
         df_stats = pd.concat(df_list)
         df_stats["Intensity"] = ["Sedentary", "Light", "Moderate", "Vigorous"]
         df_stats = df_stats.set_index("Intensity", drop=True)
+        df_stats["p < .05"] = ["*" if p < .05 else " " for p in df_stats["p-val"]]
+
+        output = []
+        for test in df_list_wtest:
+            output.append([i for i in test])
+
+        df_nonpara = pd.DataFrame(output, columns=["W", "p"], index=["Sedentary", "Light", "Moderate", "Vigorous"])
+        df_nonpara["Intensity"] = ["Sedentary", "Light", "Moderate", "Vigorous"]
+        df_nonpara = df_nonpara.set_index("Intensity", drop=True)
+        df_nonpara["p < .05"] = ["*" if p < .05 else " " for p in df_nonpara["p"]]
+
+        df_shapiro = pd.DataFrame(list(df_list_shapiro), columns=["W", "p"])
+        df_shapiro["Intensity"] = ["Sedentary", "Sedentary", "Light", "Light",
+                                   "Moderate", "Moderate", "Vigorous", "Vigorous"]
+        df_shapiro["Data"] = ["Powell_ND", "Esliger_L", "Powell_ND", "Esliger_L",
+                              "Powell_ND", "Esliger_L", "Powell_ND", "Esliger_L"]
+        df_shapiro["p < .05"] = ["*" if p < .05 else " " for p in df_shapiro["p"]]
+        df_shapiro = df_shapiro.set_index("Data", drop=True)
 
         # Plotting ----------------------------------------------------------------------------------------------------
 
@@ -108,7 +138,7 @@ class Data:
                 if i == 0 or i == 2:
                     plt.ylabel("% of valid data")
 
-        return df_stats
+        return df_stats, df_nonpara, df_shapiro
 
     def epoch_scaling_comparison(self, show_plot=False, wear_side="nondom"):
         """Tests whether scaling cutpoints to different epoch lengths affects measured activity volume.
@@ -283,6 +313,11 @@ class Data:
             anova_list.append(anova)
 
             plt.subplot(2, 2, i + 1)
+
+            bottom, top = plt.ylim()
+            if intensity == "Sedentary":
+                plt.ylim(0, 110)
+
             plt.title(intensity)
             sns.pointplot(x="EpochLen", y="Percent", hue="Cutpoint", data=curr_df, errwidth=1.5, capsize=.07)
             plt.legend()
@@ -544,7 +579,7 @@ x = Data(agree_file="/Users/kyleweber/Desktop/Data/OND05/OND05 Activity Data/All
          volume_file="/Users/kyleweber/Desktop/Data/OND05/OND05 Activity Data/All_ActivityVolume.xlsx")
 
 # Compares original parameters: Powell15ND vs. Esliger60L
-# valid_comp = x.valid_comparison(show_plot=True)
+para, nonpara, shapiro = x.valid_comparison(show_plot=False)
 
 # Compares cut-points with an author scaled to other epoch length (activity volume)
 # across_epochs_t = x.epoch_scaling_comparison(wear_side="NonDom", show_plot=True)
@@ -559,4 +594,4 @@ x = Data(agree_file="/Users/kyleweber/Desktop/Data/OND05/OND05 Activity Data/All
 # between_cutpoints_t = x.between_cutpoint_stats()
 
 # anova = x.between_author_agreement_stats()
-interaction = x.author_by_epoch()
+# interaction = x.author_by_epoch()
