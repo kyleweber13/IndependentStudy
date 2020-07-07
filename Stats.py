@@ -327,7 +327,7 @@ class Data:
 
                     if round(stats_row.loc["Esliger_L15-60"]["p-val"], 4) >= 0:
                         plt.text(x=2.5, y=top * 1.15, s="p = {}".format(round(stats_row.loc["Esliger_L15-60"]
-                                                                             ["p-val"], 3)),
+                                                                              ["p-val"], 3)),
                                  horizontalalignment="center")
 
                 # Sets ylim if a result was significant
@@ -644,16 +644,17 @@ x = Data(agree_file="/Users/kyleweber/Desktop/Data/OND05/OND05 Activity Data/All
          volume_file="/Users/kyleweber/Desktop/Data/OND05/OND05 Activity Data/All_ActivityVolume.xlsx")
 
 # Compares original parameters: Powell15ND vs. Esliger60L
-# para, nonpara, shapiro = x.valid_comparison(show_plot=True, test_type="nonparametric")
+original_para, original_nonpara, original_shapiro = x.valid_comparison(show_plot=True, test_type="nonparametric")
 
 # Compares cut-points with an author scaled to other epoch length (activity volume)
-# para, nonpara, shapiro = x.epoch_scaling_comparison(wear_side="NonDom", show_plot=True, test_type="nonparametric")
+epoch_para, epoch_nonpara, epoch_shapiro = x.epoch_scaling_comparison(wear_side="NonDom",
+                                                                      show_plot=True, test_type="nonparametric")
 
 # Compares cut-points from same author (activity volume)
-within_cutpoints_t = x.within_cutpoint_stats(show_plot=True)
+# within_cutpoints_t = x.within_cutpoint_stats(show_plot=True)
 
 # Compares [level of agreement within an author] between authors
-# within_cutpoint_agree = x.agreement_stats("Kappa", True)
+# within_cutpoint_agree = x.within_author_agreement_stats("Kappa", True)
 
 # Compares activity volume as measured by PowellND and EsligerL (correct cutpoints + epoch lengths)
 # between_cutpoints_t = x.between_cutpoint_stats()
