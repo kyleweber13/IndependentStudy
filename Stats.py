@@ -150,17 +150,17 @@ class Data:
 
     def epoch_scaling_comparison(self, show_plot=False, wear_side="nondom", test_type="parametric"):
         """Tests whether scaling cutpoints to different epoch lengths affects measured activity volume.
-           Runs separate paired T-tests on PowellND (15 vs. 60 seconds), PowellD (15 vs. 60 seconds),
+           Runs separate paired T-tests on PowellND (15 vs. 30 vs. 60 seconds), PowellD (15 vs. 30 vs. 60 seconds),
            EsligerL (15 vs. 60 seconds), EsligerR (15 vs. 60 seconds) for each activity intensity
         """
 
         if wear_side == "nondom" or wear_side == "NonDom" or wear_side.capitalize() == "Left":
             column_list = ["Powell_ND", "Esliger_L"]
-            label_list = ["PowellND15", "PowellND60", "EsligerL15", "EsligerL60"]
+            label_list = ["PowellND15", "PowellND30", "PowellND60", "EsligerL15", "Esligerl30", "EsligerL60"]
             plot_title = "Non-dominant/Left"
         if wear_side == "mom" or wear_side == "Dom" or wear_side.capitalize() == "Right":
             column_list = ["Powell_D", "Esliger_R"]
-            label_list = ["PowellD15", "PowellD60", "EsligerR15", "EsligerR60"]
+            label_list = ["PowellD15", "PowellD30", "PowellD60", "EsligerR15", "EsligerR30", "EsligerR60"]
             plot_title = "Dominant/Right"
 
         # ----------------------------------------------- PAIRED T-TESTS ----------------------------------------------
@@ -338,6 +338,323 @@ class Data:
             plot_data(test_data=test_type)
 
         return df_stats, df_nonpara, df_shapiro
+
+    def epoch_scaling_comparison2(self, show_plot=False, wear_side="nondom", test_type="nonparametric"):
+        """Statisticaly analysis of the effect on activity volume of scaling cutpoints to different epochs lengths.
+
+           Runs one-way RM ANOVA or Friedman test. Post hocs are pairwise T-tests and Wilcoxon tests, respectively.
+
+           :argument
+           -show_plot: boolean of whether to plot mean ± 95%CI with sig. bars
+           -wear_side: str, "nondom"/"left" or "dom"/"right" - which accelerometer data to use
+           -test_type: str, "parametric" or "nonparametrics - which tests to run
+
+           :returns
+           -df_f: formatted dataframe from ANOVA/Friedman test
+           -df_f_post: formatted dataframe from post-hoc tests
+        """
+
+        # Outputs
+        main_stats = None
+        posthoc_stats = None
+
+        # Sets data to use
+        if wear_side == "nondom" or wear_side == "NonDom" or wear_side.capitalize() == "Left":
+            column_list = ["Powell_ND", "Esliger_L"]
+            label_list = ["Powell15_ND", "Powell30_ND", "Powell60_ND", "Esliger15_L", "Esliger30_L", "Esliger60_L"]
+            plot_title = "Non-dominant/Left"
+        if wear_side == "mom" or wear_side == "Dom" or wear_side.capitalize() == "Right":
+            column_list = ["Powell_D", "Esliger_R"]
+            label_list = ["Powell15_D", "Powell30_D", "Powell60_D", "Esliger15_R", "Esliger30_R", "Esliger60_R"]
+            plot_title = "Dominant/Right"
+
+        def nonparametric_tests():
+
+            # FRIEDMAN TEST (equivalent: one-way RM ANOVA) ----------------------------------------------------------
+            friedman_lists = []
+            data_list = []
+            intensity_list = []
+
+            for cutpoints in column_list:
+                for intensity in ["Sedentary", "Light", "Moderate", "Vigorous"]:
+                    f = scipy.stats.friedmanchisquare(self.df_volume.loc[(self.df_volume["EpochLen"] == 15) &
+                                                                         (self.df_volume["Intensity"] == intensity)]
+                                                      [cutpoints],
+                                                      self.df_volume.loc[(self.df_volume["EpochLen"] == 30) &
+                                                                         (self.df_volume["Intensity"] == intensity)]
+                                                      [cutpoints],
+                                                      self.df_volume.loc[(self.df_volume["EpochLen"] == 60) &
+                                                                         (self.df_volume["Intensity"] == intensity)]
+                                                      [cutpoints])
+
+                    friedman_lists.append(f)
+                    data_list.append(cutpoints)
+                    intensity_list.append(intensity)
+
+            output = []
+            for test in friedman_lists:
+                output.append([i for i in test])
+
+            df_f = pd.DataFrame(output, columns=["W", "p-val"])
+            df_f["Data"] = data_list
+            df_f["Intensity"] = intensity_list
+            df_f = df_f.set_index("Data", drop=True)
+            df_f["p < .05"] = ["*" if p < .05 else " " for p in df_f["p-val"]]
+
+            # Posthoc tests ------------------------------------------------------------------------------------------
+            # posthoc_to_run = df_f.loc[df_f["p < .05"] == "*"]
+            posthoc_to_run = df_f
+
+            posthoc_lists = []
+            data_list = []
+            intensity_list = []
+
+            for i in range(0, posthoc_to_run.shape[0]):
+                cutpoints = [j for j in posthoc_to_run.index][i]
+                intensity = posthoc_to_run.iloc[i]["Intensity"]
+
+                e15_60 = scipy.stats.wilcoxon(x=self.df_volume.loc[(self.df_volume["EpochLen"] == 15) &
+                                                                   (self.df_volume["Intensity"] == intensity)][cutpoints],
+                                              y=self.df_volume.loc[(self.df_volume["EpochLen"] == 60) &
+                                                                   (self.df_volume["Intensity"] == intensity)][cutpoints])
+                e15_30 = scipy.stats.wilcoxon(x=self.df_volume.loc[(self.df_volume["EpochLen"] == 15) &
+                                                                   (self.df_volume["Intensity"] == intensity)][cutpoints],
+                                              y=self.df_volume.loc[(self.df_volume["EpochLen"] == 30) &
+                                                                   (self.df_volume["Intensity"] == intensity)][cutpoints])
+                e30_60 = scipy.stats.wilcoxon(x=self.df_volume.loc[(self.df_volume["EpochLen"] == 30) &
+                                                                   (self.df_volume["Intensity"] == intensity)][cutpoints],
+                                              y=self.df_volume.loc[(self.df_volume["EpochLen"] == 60) &
+                                                                   (self.df_volume["Intensity"] == intensity)][cutpoints])
+
+                posthoc_lists.append(e15_30)
+                posthoc_lists.append(e15_60)
+                posthoc_lists.append(e30_60)
+
+                data_list.append(cutpoints + "_15-60")
+                intensity_list.append(intensity)
+
+                data_list.append(cutpoints + "_15-30")
+                intensity_list.append(intensity)
+
+                data_list.append(cutpoints + "_30-60")
+                intensity_list.append(intensity)
+
+            output = []
+            for test in posthoc_lists:
+                output.append([i for i in test])
+
+            df_f_post = pd.DataFrame(output, columns=["W", "p-val"])
+            df_f_post["Data"] = data_list
+            df_f_post["Intensity"] = intensity_list
+            df_f_post = df_f_post.set_index("Data", drop=True)
+            df_f_post["p < .05"] = ["*" if p < .05 else " " for p in df_f_post["p-val"]]
+
+            return df_f, df_f_post
+
+        def plot_data(test_data):
+
+            # SD to confidence interval conversion factor
+            n_subjs = len(set(self.df_volume["ID"]))
+            t_crit = scipy.stats.t.ppf(.95, n_subjs - 1)
+            ci_factor = t_crit / np.sqrt(n_subjs)
+
+            # 2x2 grid
+            fig = plt.subplots(2, 2, figsize=(10, 7))
+            plt.subplots_adjust(hspace=.4)
+
+            plt.suptitle("Epoch Length Scaling within Author: {} data ({})".format(plot_title, test_data))
+
+            # Loops through each intensity's data
+            for ind, intensity in enumerate(["Sedentary", "Light", "Moderate", "Vigorous"]):
+                plt.subplot(2, 2, ind + 1)
+                plt.title(intensity)
+
+                # Bar plot: each epoch length
+                plt.bar(x=label_list,
+                        height=[self.df_volume.loc[(self.df_volume["Intensity"] == intensity) &
+                                                   (self.df_volume["EpochLen"] == 15)].describe()
+                                [column_list[0]]["mean"],
+                                self.df_volume.loc[(self.df_volume["Intensity"] == intensity) &
+                                                   (self.df_volume["EpochLen"] == 30)].describe()
+                                [column_list[0]]["mean"],
+                                self.df_volume.loc[(self.df_volume["Intensity"] == intensity) &
+                                                   (self.df_volume["EpochLen"] == 60)].describe()
+                                [column_list[0]]["mean"],
+                                self.df_volume.loc[(self.df_volume["Intensity"] == intensity) &
+                                                   (self.df_volume["EpochLen"] == 15)].describe()
+                                [column_list[1]]["mean"],
+                                self.df_volume.loc[(self.df_volume["Intensity"] == intensity) &
+                                                   (self.df_volume["EpochLen"] == 30)].describe()
+                                [column_list[1]]["mean"],
+                                self.df_volume.loc[(self.df_volume["Intensity"] == intensity) &
+                                                   (self.df_volume["EpochLen"] == 60)].describe()
+                                [column_list[1]]["mean"]],
+
+                        # 95% confidence intervals
+                        yerr=[self.df_volume.loc[(self.df_volume["Intensity"] == intensity) &
+                                                 (self.df_volume["EpochLen"] == 15)].describe()[column_list[0]][
+                                  "std"] * ci_factor,
+                              self.df_volume.loc[(self.df_volume["Intensity"] == intensity) &
+                                                 (self.df_volume["EpochLen"] == 30)].describe()[column_list[0]][
+                                  "std"] * ci_factor,
+                              self.df_volume.loc[(self.df_volume["Intensity"] == intensity) &
+                                                 (self.df_volume["EpochLen"] == 60)].describe()[column_list[0]][
+                                  "std"] * ci_factor,
+                              self.df_volume.loc[(self.df_volume["Intensity"] == intensity) &
+                                                 (self.df_volume["EpochLen"] == 15)].describe()[column_list[1]][
+                                  "std"] * ci_factor,
+                              self.df_volume.loc[(self.df_volume["Intensity"] == intensity) &
+                                                 (self.df_volume["EpochLen"] == 30)].describe()[column_list[1]][
+                                  "std"] * ci_factor,
+                              self.df_volume.loc[(self.df_volume["Intensity"] == intensity) &
+                                                 (self.df_volume["EpochLen"] == 60)].describe()[column_list[1]][
+                                  "std"] * ci_factor],
+                        color=["red", "firebrick", "maroon", "lightskyblue", "dodgerblue", "mediumblue"],
+                        edgecolor='black', alpha=.9, capsize=4)
+
+                plt.xticks(fontsize=8, rotation=45)
+
+                if ind == 0 or ind == 2:
+                    plt.ylabel("% of data")
+
+                # Significance bars ----------------------------------------------------------------------------------
+                stats_row = posthoc_stats.loc[posthoc_stats["Intensity"] == intensity]
+
+                # Gets automatically-generated ylims
+                bottom, top = plt.ylim()
+
+                # Used to set ylims
+                sig_result = False
+
+                # Powell data -----------------------------------------------------------------
+                h = 1.05  # Multiplication factor for item placement
+
+                # Powell_ND_30-60
+                if stats_row.loc["Powell_ND_30-60"]["p-val"] < .05:
+                    sig_result = True
+
+                    # Plots significance bar
+                    plt.plot(["Powell30_ND", "Powell30_ND", "Powell60_ND", "Powell60_ND"],
+                             [top * (h - .05), top * h,
+                              top * h, top * (h - .05)], color='black')
+
+                    # Label if p < .001
+                    if stats_row.loc["Powell_ND_30-60"]["p-val"] < .001:
+                        plt.text(x=1.5, y=top * (h + .04), s="p < .001",
+                                 horizontalalignment="center")
+
+                    # Label if p >= .001
+                    if stats_row.loc["Powell_ND_30-60"]["p-val"] >= .001:
+                        p_val = "." + str(round(stats_row.loc["Powell_ND_30-60"]["p-val"], 3)).split(".")[-1]
+
+                        plt.text(x=1.5, y=top * (h + .04), s="p = {}".format(p_val), horizontalalignment="center")
+
+                    h += .25  # Adds spacing for next bar
+
+                # Powell_ND_15_30
+                if stats_row.loc["Powell_ND_15-30"]["p-val"] < .05:
+                    sig_result = True
+                    plt.plot(["Powell15_ND", "Powell15_ND", "Powell30_ND", "Powell30_ND"],
+                             [top * (h - .05), top * h,
+                              top * h, top * (h - .05)], color='black')
+
+                    if stats_row.loc["Powell_ND_15-30"]["p-val"] < 0.001:
+                        plt.text(x=.5, y=top * (h + .04), s="p < .001", horizontalalignment="center")
+
+                    if stats_row.loc["Powell_ND_15-30"]["p-val"] >= .001:
+                        p_val = "." + str(round(stats_row.loc["Powell_ND_15-30"]["p-val"], 3)).split(".")[-1]
+
+                        plt.text(x=.5, y=top * (h + .04), s="p = {}".format(p_val), horizontalalignment="center")
+
+                    h += .25
+
+                # Powell_ND_15_60
+                if stats_row.loc["Powell_ND_15-60"]["p-val"] < .05:
+                    sig_result = True
+                    plt.plot(["Powell15_ND", "Powell15_ND", "Powell60_ND", "Powell60_ND"],
+                             [top * (h - .05), top * h,
+                              top * h, top * (h - .05)], color='black')
+
+                    if stats_row.loc["Powell_ND_15-60"]["p-val"] < .001:
+                        plt.text(x=1, y=top * (h + .04), s="p < .001", horizontalalignment="center")
+
+                    if stats_row.loc["Powell_ND_15-60"]["p-val"] >= .001:
+                        p_val = "." + str(round(stats_row.loc["Powell_ND_15-60"]["p-val"], 3)).split(".")[-1]
+
+                        plt.text(x=1, y=top * (h + .04), s="p = {}".format(p_val), horizontalalignment="center")
+
+                    h += .25
+
+                # Esliger data ----------------------------------------------------------------
+                h2 = 1.05
+
+                # Esliger_L_30-60
+                if stats_row.loc["Esliger_L_30-60"]["p-val"] < .05:
+                    sig_result = True
+                    plt.plot(["Esliger30_L", "Esliger30_L", "Esliger60_L", "Esliger60_L"],
+                             [top * (h2 - .05), top * h2,
+                              top * h2, top * (h2 - .05)], color='black')
+
+                    if stats_row.loc["Esliger_L_30-60"]["p-val"] < .001:
+                        plt.text(x=4.5, y=top * (h2 + .04), s="p < .001",
+                                 horizontalalignment="center")
+
+                    if stats_row.loc["Esliger_L_30-60"]["p-val"] >= .001:
+                        p_val = "." + str(round(stats_row.loc["Esliger_L_30-60"]["p-val"], 3)).split(".")[-1]
+                        plt.text(x=4.5, y=top * (h2 + .04), s="p = {}".format(p_val), horizontalalignment="center")
+
+                    h2 += .25
+
+                # Esliger_L_15-30
+                if stats_row.loc["Esliger_L_15-30"]["p-val"] < .05:
+                    sig_result = True
+                    plt.plot(["Esliger15_L", "Esliger15_L", "Esliger30_L", "Esliger30_L"],
+                             [top * (h2 - .05), top * h2,
+                              top * h2, top * (h2 - .05)], color='black')
+
+                    if stats_row.loc["Esliger_L_15-30"]["p-val"] < .001:
+                        plt.text(x=4, y=top * (h2 + .04), s="p < .001",
+                                 horizontalalignment="center")
+
+                    if stats_row.loc["Esliger_L_15-30"]["p-val"] >= .001:
+                        p_val = "." + str(round(stats_row.loc["Esliger_L_15-30"]["p-val"], 3)).split(".")[-1]
+
+                        plt.text(x=4, y=top * (h2 + .04), s="p = {}".format(p_val), horizontalalignment="center")
+
+                    h2 += .25
+
+                # Esliger_L_15_60
+                if stats_row.loc["Esliger_L_15-60"]["p-val"] < .05:
+                    sig_result = True
+                    plt.plot(["Esliger15_L", "Esliger15_L", "Esliger60_L", "Esliger60_L"],
+                             [top * (h2 - .05), top * h2,
+                              top * h2, top * (h2 - .05)], color='black')
+
+                    if stats_row.loc["Esliger_L_15-60"]["p-val"] < .001:
+                        plt.text(x=4, y=top * (h2 + .04), s="p < .001",
+                                 horizontalalignment="center")
+
+                    if stats_row.loc["Esliger_L_15-60"]["p-val"] >= .001:
+                        p_val = "." + str(round(stats_row.loc["Esliger_L_15-60"]["p-val"], 3)).split(".")[-1]
+
+                        plt.text(x=4, y=top * (h2 + .04), s="p = {}".format(p_val),
+                                 horizontalalignment="center")
+
+                    h2 += .25
+
+                # Sets ylim if a result was significant
+                if sig_result:
+                    # plt.ylim(bottom, top * 1.3)
+                    plt.ylim(bottom, max([h, h2]) * top)
+
+        # Calls appropriate functions --------------------------------------------------------------------------------
+        if test_type == "nonparametric":
+            main_stats, posthoc_stats = nonparametric_tests()
+
+        if show_plot:
+            plot_data(test_data=test_type)
+
+        return main_stats, posthoc_stats
 
     def author_by_epoch(self, wear_side="nondom"):
 
@@ -644,11 +961,11 @@ x = Data(agree_file="/Users/kyleweber/Desktop/Data/OND05/OND05 Activity Data/All
          volume_file="/Users/kyleweber/Desktop/Data/OND05/OND05 Activity Data/All_ActivityVolume.xlsx")
 
 # Compares original parameters: Powell15ND vs. Esliger60L
-original_para, original_nonpara, original_shapiro = x.valid_comparison(show_plot=True, test_type="nonparametric")
+# original_para, original_nonpara, original_shapiro = x.valid_comparison(show_plot=True, test_type="nonparametric")
 
 # Compares cut-points with an author scaled to other epoch length (activity volume)
-epoch_para, epoch_nonpara, epoch_shapiro = x.epoch_scaling_comparison(wear_side="NonDom",
-                                                                      show_plot=True, test_type="nonparametric")
+# epoch_para, epoch_nonpara, epoch_shapiro = x.epoch_scaling_comparison(wear_side="NonDom", show_plot=True, test_type="nonparametric")
+# df1, df2 = x.epoch_scaling_comparison2(test_type="nonparametric", show_plot=True)
 
 # Compares cut-points from same author (activity volume)
 # within_cutpoints_t = x.within_cutpoint_stats(show_plot=True)
@@ -661,3 +978,4 @@ epoch_para, epoch_nonpara, epoch_shapiro = x.epoch_scaling_comparison(wear_side=
 
 # anova = x.between_author_agreement_stats()
 # interaction = x.author_by_epoch()
+
